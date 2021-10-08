@@ -1,0 +1,52 @@
+\documentclass{article}
+\usepackage{array}
+\usepackage{textcomp}
+\usepackage{hyperref}
+\usepackage{color}   %May be necessary if you want to color links
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true, %set true if you want colored links
+    linktoc=all,     %set to all if you want both sections and subsections linked
+    linkcolor=blue,  %choose some color if you want links to stand out
+}
+
+
+\usepackage{siunitx}
+\newcolumntype{P}[1]{>{\centering\arraybackslash}p{#1}}
+\begin{document}
+\tableofcontents
+\begin{center}
+\section{Introduction}
+\LaTeX{} \cite{WinNT} is a set of macros built atop \TeX{} \cite{WinNT}.
+\section{Next title}
+
+\begin{tabular}{ | P{0.5cm} | P{2.5cm}| P{1.5cm} | P{1.5cm} | P{1.5cm} | P{1.5cm} |} 
+  \hline
+  \textnumero & Student initials & $F_1[m^{2}]$ & $F_2[m^{2}]$ & $k_{11}$ [m/s] & $k_{22}$ [m/s]\\ 
+  \hline
+  1 & RF & 0.1 & 0.8 & 1.0 & 1.3\\ 
+  \hline
+  2 & HL & 0.1 & 0.8 & 1.3 & 1.0\\
+  \hline
+  3 & CD & 0.8 & 0.1 & 1.0 & 1.3\\ 
+  \hline
+  4 & KM & 0.8 & 0.1 & 1.3 & 1.0\\
+  \hline
+  5 & NHT & 2.0 & 0.8 & 1.0 & 1.3\\ 
+  \hline
+  6 & MT & 2.0 & 0.8 & 1.3 & 1.0\\
+  \hline
+  7 & PE & 0.8 & 2.0 & 1.0 & 1.3\\ 
+  \hline
+  8 & VM & 0.8 & 2.0 & 1.3 & 1.0\\
+  \hline
+  9 & ZA & 1.2 & 0.1 & 1.0 & 1.3\\ 
+  \hline
+\end{tabular}
+\end{center}
+\section{Literature}
+
+\bibliographystyle{plain} % We choose the &quot;plain&quot; reference style
+\bibliography{refs} % Entries are in the &quot;refs.bib&quot; file</code></pre>
+\end{document}
+
