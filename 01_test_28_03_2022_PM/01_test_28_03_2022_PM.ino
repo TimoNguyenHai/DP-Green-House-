@@ -17,24 +17,26 @@ const char* ssid = "HangTrieu 2.4GHz";
 const char* password = "hoilamgi";
 
 
-//reconnect to Wifi parameters
+//Reconnect to Wifi parameters
 unsigned long previousMillis = 0;
 unsigned long interval = 20000;
-
+//Alarm parameter
 unsigned long intervalAlarm = 900000;
 //constants for moisture sensor calibration
 const int airValue = 3300;   //you need to replace this value with Value_1
 const int waterValue = 1450;  //you need to replace this value with Value_2
 
 //Thingspeak
-const char* myWriteAPIKey = "5XFU4BAC99BK9VIX"; //ThingSpeak API Key
-unsigned long myChannelNumber = 1680507; //ThingSpeak channel number
+const char* myWriteAPIKey = "SYNHQPWXULTVK24T"; //ThingSpeak API Key
+unsigned long myChannelNumber = 1686802; //ThingSpeak channel number
+
 
 /*Defining the pin on ESP32*/
 #define SENSOR_PIN 34
-#define ONE_WIRE_BUS 35
+#define ONE_WIRE_BUS 33
 #define LIGHT_SENSOR_PIN 32
-#define RELAY_PIN  26 
+#define RELAY_PIN_PUMP 26 
+#define BUTTON_PIN 27
 /*Defining the port and host for smtp.gmail.com*/
 #define SMTP_HOST "smtp.gmail.com"
 #define SMTP_PORT 465
@@ -51,12 +53,12 @@ DallasTemperature sensors(&oneWire);
 Adafruit_BME680 bme;
 
 // define variables
-int pumpState;
-int alarmMoisture;
-int lastAlarmMoisture;
-int manualPumpFlag;
+int getValue;
 int soilMoistureValue;
 int soilMoisturePercent = 0;
+bool pumpState;
+
+float temperatureBME680;
 //Sending Flag
 bool sendingFlag = true;
 //Email Error Flag
@@ -78,14 +80,14 @@ portMUX_TYPE timerMux1 = portMUX_INITIALIZER_UNLOCKED;
 /* The SMTP Session object used for Email sending */
 SMTPSession smtp;
 
-void sendSMTP()
+void sendSMTP(String stringAlarm)
 {
 //Sending EMAILS
 /** Enable the debug via Serial port
    * none debug or 0
    * basic debug or 1 
    */
-smtp.debug(1);
+smtp.debug(0);
 
 /* Declare the session config data */
  ESP_Mail_Session session;
@@ -106,22 +108,23 @@ smtp.debug(1);
   message.subject = "ESP Test Email";
   message.addRecipient("Timo", RECIPIENT_EMAIL);
 
-  String stringOne = "Timo!, I";
-  String stringTwo;
-  //Moisture sensor alarm 
-  if (soilMoisturePercent > 90)
-      {stringTwo = "am Drowing";}
-  else
-      if (soilMoisturePercent < 20)
-      {stringTwo = "am Drying";}
-     
-  String stringThree = "HELP! - Sent from ESP board - TEST VERSION";
-  String stringFinal = (stringOne + " " + stringTwo + " " + stringThree + " " + "Soil Moisture: " + soilMoisturePercent+"%");
+  String stringOne = "Hi, Timo!";
+  String stringTwo = ("I think you should check the GreenHouse! " + stringAlarm + " This Value is abnormal!"+ "\n");
+  String stringThree = "- Sent from ESP board - TEST VERSION";
+  String stringFour= "Here are the parameters of the GreenHouse!:";
+  String stringFinal = (stringOne + "\n"  + stringTwo + "\n" + stringThree + "\n" + stringFour + "\n" + "\n" + "Temperature BME680:" + " " + (bme.temperature) + "C" + "\n" + "Pressure BME680:" + " " + (bme.pressure / 100.0) + "hPa" + "\n" + "Humidity BME680:" + " " + (bme.humidity) + "%" + "\n" + "Gas BME680:" + " " + (bme.gas_resistance / 1000.0) + "kOhm" + "\n" + "Soil Moisture:" + " " + soilMoisturePercent + "%"+ "\n" + "Pump State" + " " + pumpState + " ");
   String textMsg = stringFinal;
   message.text.content = textMsg.c_str();
   message.text.charSet = "us-ascii";
   message.text.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
-
+  
+    
+  /*Send HTML message
+   String htmlMsg =("<div style=\"color:#2f4468;\"><h1>Hello World!</h1><p> Sent from ESP board<br>"soilMoisturePercent"<br>City, State 00000</p></div>");
+   message.html.content = htmlMsg.c_str();
+   message.text.charSet = "us-ascii";
+   message.html.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+   */
 /* Connect to server with the session config */
   if (!smtp.connect(&session))
     return;
@@ -139,7 +142,7 @@ void evaluateError()
 void IRAM_ATTR onTimer0(){
   // Critical Code here
   portENTER_CRITICAL_ISR(&timerMux0);
-  sendingFlag = true;
+  emailFlag = true;
   portEXIT_CRITICAL_ISR(&timerMux0);
 }
 
@@ -147,22 +150,23 @@ void IRAM_ATTR onTimer0(){
 void IRAM_ATTR onTimer1(){
   // Critical Code here
   portENTER_CRITICAL_ISR(&timerMux1);
-  emailFlag = true;
+  sendingFlag = true;
   portEXIT_CRITICAL_ISR(&timerMux1);
 }
 
-bool flagManualValue() 
+bool getValueJson(String URL) 
 {  
 // Get manual flag value from Thingspeak   
    HTTPClient http;
-   http.begin("https://api.thingspeak.com/channels/1681543/fields/1.json?results=1"); //Specify the URL
+   http.begin(URL); //Specify the URL
+   
    int httpCode = http.GET();
    if (httpCode > 0) 
     { //Check for the returning code
         String payload = http.getString();
         DynamicJsonDocument doc(1024);
         deserializeJson(doc, payload);
-        Serial.println(payload);
+        //Serial.println(payload);
         //JsonObject root = doc.as<JsonObject>();
       //channel
         //JsonObject root = doc["channel"];
@@ -171,10 +175,10 @@ bool flagManualValue()
           Serial.println(id);
         */
      //feeds
-        JsonArray array_values_field = doc["feeds"];
-        JsonObject object_value_field = array_values_field[0];
-        int manualPumpFlag = object_value_field["field1"];
-        return manualPumpFlag;
+        JsonArray arrayValue = doc["feeds"];
+        JsonObject objectValue = arrayValue[0];
+        int getValue = objectValue["field1"];
+        return getValue;
      }
    else 
     {  Serial.println("Error on HTTP request");
@@ -214,10 +218,10 @@ int moistureSensor()
 }
 
 
-bool alarmEmailSender(int a)
+bool alarmEmailSender(int a, bool b)
    // Email if error
 { 
-     if (a > 90 || a < 20)
+     if (a > 90 || a < 20 || b == 0)
       { 
          return true;
       }
@@ -227,39 +231,116 @@ bool alarmEmailSender(int a)
       }
 }
 
+bool tankLevelSwitch()
+{
+  // Switch to show position of the tank
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  int lastState = digitalRead(BUTTON_PIN); //Tank level High/Low
+  if (lastState == HIGH) 
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+}
+
 void pumpOn()
 {
   // Pump Switch Off
-  digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(RELAY_PIN_PUMP, LOW);
 }
 void pumpOff()
 {
   // Pump Switch On
-  digitalWrite(RELAY_PIN, HIGH);
+  digitalWrite(RELAY_PIN_PUMP, HIGH);
 }
 
-bool pumpControl(int x,int y)
-{
-  if (x > 90) //Alarm active, Pump off bcs of safety
-       {
-          return false;
-       }
-    else if (x <= 90 && y > 0)
+bool pumpControl(int x,bool y, bool z, bool j)
+{ 
+  
+  String param;
+  String stringAlarm;
+  // Decided if pump is on or off. Parameters: x = soilMoisturePercent;y = getValue; z = tankLevelSwitch ; j = ON/OFF manual pump
+  if (x > 90 || z == 0) //Alarm active, Pump off bcs of safety. Either moisture is high or level in the tank is low
        {  
-          return true;
+          // x = soilMoisturePercent;y = getValue y =  z = tankLevel;
+          if (x > 90)
+          {
+            if (x > 90 && y == 1)
+            {
+             param = "Soil Moisture Percent: ";
+             stringAlarm = (param + x + "%." + "Careful! The pump is on manual, you should turn it off!");
+             //sendSMTP(stringAlarm);
+             return false;
+            }
+            else
+            {
+             param = "Soil Moisture Percent: ";
+             stringAlarm = (param + x + "%.");
+             //sendSMTP(stringAlarm);
+             return false;
+            }
+          }
+          else
+          {
+          param = "Water Level Tank is LOW =  ";
+          stringAlarm = (param + z);
+          //sendSMTP(stringAlarm);
+          return false;
+          }
        }
-    else
+    else if (x <= 90 && y == 1 && x > 15)
+       {  
+          if (x <= 90 && y == 1 && x > 15 && j > 0) //turn on manually
+          {
+          return true;
+          }
+          else if (x <= 90 && y == 1 && x > 15 && j == 0) //turn off manually
+          {
+          return false;
+          }
+       }
+   else
+    {   
+      if  (x <= 15 && y == 1)
+        {
+          if  (x <= 15 && y == 1 && j == 0)
           { 
-            if (x <= 30 && y == 0) 
-              {
-                return true;
+            param = "Soil Moisture Percent: ";
+            stringAlarm = (param + x + "%." + "Careful! The pump is on manual and it is OFF, you should turn it on!");
+            //sendSMTP(stringAlarm);
+            return false;
+          }
+          else if (x <= 15 && y == 1 && j > 0)
+          {
+            param = "Soil Moisture Percent: ";
+            stringAlarm = (param + x + "%." + "Careful! The pump is on manual and it is ON, not working!");
+            //sendSMTP(stringAlarm);
+            return true;
+          }
+        } 
+      else
+          {
+             if (x <= 30 && y == 0) 
+             {
+               if (x <= 15 && y == 0)
+                {
+                  param = "Soil Moisture Percent: ";
+                  stringAlarm = (param + x + "%.");
+                  //sendSMTP(stringAlarm);
+                  return true;
+                }
               }
-            else if (x >= 55 && y == 0)
+              else if (x >= 55 && y == 0)
               {
                 return false;
               }
           }
+     }
 }
+
 
 int lightSensor()
 {
@@ -278,12 +359,12 @@ void setup(void)
 
   timer0 = timerBegin(0, 80, true); 
   timerAttachInterrupt(timer0, &onTimer0, true); 
-  timerAlarmWrite(timer0, 16000000, true);
+  timerAlarmWrite(timer0, 17000000, true);
   timerAlarmEnable(timer0); // enable;
 
   timer1 = timerBegin(1, 80, true);
   timerAttachInterrupt(timer1, &onTimer1, true);  
-  timerAlarmWrite(timer1, 30000000, true);
+  timerAlarmWrite(timer1, 16000000, true);
   timerAlarmEnable(timer1);
   
   WiFi.begin(ssid, password);
@@ -299,7 +380,8 @@ void setup(void)
   // init ThingSpeak
   ThingSpeak.begin(client);
   //Relay  
-  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(RELAY_PIN_PUMP, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   // Start up the library
   while (!Serial);
@@ -332,18 +414,25 @@ void loop(void)
    //Start the BME680
     bmeStart();
 
-    //Flag Manual Value
-    int manualPumpFlag = flagManualValue();
-    Serial.println("Manual Flag:");
-    Serial.println(manualPumpFlag);
+   //Flag Manual Value
+    String url_PumpFlag = ("https://api.thingspeak.com/channels/1686803/feeds.json?api_key=COJG4GDTZ0GB5QXC&results=1");
+    bool pumpFlag = getValueJson(url_PumpFlag);
+
+   //Flag Manual Value
+    String url_ManualPump = ("https://api.thingspeak.com/channels/1686806/feeds.json?api_key=INMEFND2RBOJZFWD&results=1");
+    bool manualPump = getValueJson(url_ManualPump);
         
    //Moisture sensor
     soilMoisturePercent = moistureSensor();
-    Serial.println("Soil Moisture Percent:");
-    Serial.println(soilMoisturePercent);
+
+   // Tank Level Switch
+    bool tankLevel = tankLevelSwitch();
+    
+   // LIGHT SENSOR
+    float lightValue = lightSensor(); //Lowest 659  
     
    //Pump Control
-    bool pumpState = pumpControl(soilMoisturePercent,manualPumpFlag);
+    bool pumpState = pumpControl(soilMoisturePercent,pumpFlag,tankLevel,manualPump);
     if (pumpState == true)
     {
       pumpOn();
@@ -352,12 +441,11 @@ void loop(void)
     {
       pumpOff();
     }
-    Serial.println("Pump Relay State:");
-    Serial.println(pumpState);
-
+   
    //Email if error
    //alarmEmailSender();
-   bool sendingEmail =  alarmEmailSender(soilMoisturePercent);
+   /*
+   bool sendingEmail =  alarmEmailSender(soilMoisturePercent,tankLevel);
    Serial.println("sendingEmail:");
    Serial.println(sendingEmail);
 
@@ -367,12 +455,13 @@ void loop(void)
    Serial.println("previousMillis:");
    Serial.println(previousMillis);
    
-   if ((sendingEmail = true) && (currentMillis - previousMillis >= intervalAlarm));
+   if ((sendingEmail == true) && (currentMillis - previousMillis >= intervalAlarm));
    {
       sendSMTP();
-      previousMillis = currentMillis;
+      currentMillis = previousMillis;
    }
-
+   */
+   
    // Timer ended - prepare the values for thingspeak
    if(sendingFlag == true)
    {
@@ -385,14 +474,17 @@ void loop(void)
          root["gasBME680"] = bme.gas_resistance / 1000.0;  
          root["soilMoisturePercent"]= soilMoisturePercent;
          root["pumpState"] = pumpState;
+         root["Pump Flag Value"] = pumpFlag;
+         root["Manual Pump Value"] = manualPump;
+         root["Light Value"] = lightValue;
     serializeJsonPretty(doc, Serial);
     Serial.println();
 
-    //Prepare the bme680 values for Thingspeak
-         float temperatureBME680 = bme.temperature;
-         float pressureBME680 = bme.pressure / 100.0;
-         float humidityBME680 = bme.humidity;
-         float gasBME680 = bme.gas_resistance / 1000.0;
+   //Calculate the parameters of BME680
+    float temperatureBME680 = bme.temperature;
+    float pressureBME680 = bme.pressure / 100.0;
+    float humidityBME680 = bme.humidity;
+    float gasBME680 = bme.gas_resistance / 1000.0;
 
   //Evaluating the error data
      // evaluateError();
@@ -406,6 +498,7 @@ void loop(void)
          ThingSpeak.setField(4, pressureBME680);
          ThingSpeak.setField(5, soilMoisturePercent);
          ThingSpeak.setField(6, pumpState);
+         ThingSpeak.setField(7, lightValue);
          
          String myStatus = ("Updating data");
          
